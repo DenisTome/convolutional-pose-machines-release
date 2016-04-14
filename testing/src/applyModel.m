@@ -1,11 +1,23 @@
-function [heatMaps, prediction] = applyModel(test_image, param, rectangle)
+function [heatMaps, prediction] = applyModel(test_image, param, rectangle, plot_rect, verbose)
+
+if ~exist('plot_rect','var')
+    plot_rect = 1;
+end
+
+if ~exist('verbose','var')
+    verbose = 1;
+end
 
 %% Select model and other parameters from param
 model = param.model(param.modelID);
 boxsize = model.boxsize;
 np = model.np;
 nstage = model.stage;
-oriImg = imread(test_image);
+if isa(test_image,'uint8')
+    oriImg = test_image;
+else
+    oriImg = imread(test_image);
+end
 
 %% Apply model, with searching thourgh a range of scales
 octave = param.octave;
@@ -44,21 +56,27 @@ for m = 1:length(multiplier)
     [imageToTest, pad{m}] = padAround(imageToTest, boxsize, center_s, model.padValue); % into boxsize, which is multipler of 4
     
     % plot bbox indicating what actually goes into CPM
-    figure(1);
-    pad_current = pad{m};
-    x = [0-pad_current(2), size(oriImg,2)*scale + pad_current(4)]/scale;
-    y = [0-pad_current(1), size(oriImg,1)*scale + pad_current(3)]/scale;
-    plot([x(1) x(1) x(2) x(2) x(1)], [y(1) y(2) y(2) y(1) y(1)], 'Color', colors(m,:));
-    drawnow;
+    if (plot_rect)
+        figure(1);
+        pad_current = pad{m};
+        x = [0-pad_current(2), size(oriImg,2)*scale + pad_current(4)]/scale;
+        y = [0-pad_current(1), size(oriImg,1)*scale + pad_current(3)]/scale;
+        plot([x(1) x(1) x(2) x(2) x(1)], [y(1) y(2) y(2) y(1) y(1)], 'Color', colors(m,:));
+        drawnow;
+    end
     % figure(m+2); imshow(imageToTest);
     
     imageToTest = preprocess(imageToTest, 0.5, param);
     
-    fprintf('Running FPROP for scale #%d/%d....', m, length(multiplier));
-    tic;
-    score(:,m) = applyDNN(imageToTest, net, nstage);
-    time = toc;
-    fprintf('done, elapsed time: %.3f sec\n', time);
+    if (verbose)
+        fprintf('Running FPROP for scale #%d/%d....', m, length(multiplier));
+    end
+        tic;
+        score(:,m) = applyDNN(imageToTest, net, nstage);
+        time = toc;
+    if (verbose)
+        fprintf('done, elapsed time: %.3f sec\n', time);
+    end
     
     pool_time = size(imageToTest,1) / size(score{1,m},1); % stride-8
     % make heatmaps into the size of original image according to pad and scale

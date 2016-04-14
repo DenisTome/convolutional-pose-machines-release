@@ -15,12 +15,14 @@ fprintf('Description of selected model: %s \n', param.model(param.modelID).descr
 % put your own test image here
 %test_image = 'sample_image/singer.jpg';
 %test_image = 'sample_image/shihen.png';
-test_image = 'sample_image/roger.png';
+%test_image = 'sample_image/roger.png';
 %test_image = 'sample_image/nadal.png';
 %test_image = 'sample_image/LSP_test/im1640.jpg';
 %test_image = 'sample_image/CMU_panoptic/00000998_01_01.png';
 %test_image = 'sample_image/CMU_panoptic/00004780_01_01.png';
 %test_image = 'sample_image/FLIC_test/princess-diaries-2-00152201.jpg';
+test_image = 'sample_image/FLIC_test/12-oclock-high-special-edition-00006381.jpg'
+%test_image = 'sample_image/LSP_test/im1658.jpg';
 interestPart = 'Lwri'; % to look across stages. check available names in config.m
 
 %% core: apply model on the image, to get heat maps and prediction coordinates
