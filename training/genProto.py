@@ -124,7 +124,7 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
 
 
 
-def writePrototxts(dataFolder, dir, batch_size, stepsize, layername, kernel, stride, outCH, transform_param_in, base_lr, folder_name, label_name):
+def writePrototxts(path_in_caffe, dataFolder, dir, batch_size, stepsize, layername, kernel, stride, outCH, transform_param_in, base_lr, folder_name, label_name):
     # write the net prototxt files out
     with open('%s/pose_train_test.prototxt' % dir, 'w') as f:
         print 'writing %s/pose_train_test.prototxt' % dir
@@ -137,13 +137,13 @@ def writePrototxts(dataFolder, dir, batch_size, stepsize, layername, kernel, str
         f.write(str_to_write)
 
     with open('%s/pose_solver.prototxt' % dir, "w") as f:
-        solver_string = getSolverPrototxt(base_lr, folder_name, stepsize)
+        solver_string = getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir)
         print 'writing %s/pose_solver.prototxt' % dir
         f.write('%s' % solver_string)
 
 
-def getSolverPrototxt(base_lr, folder_name, stepsize):
-    string = 'net: "pose_train_test.prototxt"\n\
+def getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir):
+    string = 'net: "%s/%s/pose_train_test.prototxt"\n\
 # The base learning rate, momentum and the weight decay of the network.\n\
 base_lr: %f\n\
 momentum: 0.9\n\
@@ -158,21 +158,21 @@ display: 50\n\
 max_iter: 600000\n\
 # snapshot intermediate results\n\
 snapshot: 1000\n\
-snapshot_prefix: "%s/pose"\n\
+snapshot_prefix: "%s/%s/pose"\n\
 # solver mode: CPU or GPU\n\
-solver_mode: GPU\n' % (base_lr, stepsize, folder_name)
+solver_mode: GPU\n' % (path_in_caffe, dir, base_lr, stepsize, path_in_caffe, folder_name)
     return string
-
 
 if __name__ == "__main__":
 
     ### Change here for different dataset
+    path_in_caffe = 'models/cpm_architecture'
     directory = 'prototxt/H36M_validation'
-    dataFolder = 'lmdb/H36M_validation'
+    dataFolder = '%s/lmdb/H36M_alltrain' % path_in_caffe
     stepsize = 136106 # stepsize to decrease learning rate. This should depend on your dataset size
     ###
 
-    batch_size = 16
+    batch_size = 8
     d_caffemodel = '%s/caffemodel' % directory # the place you want to store your caffemodel
     # should be higher due to random initialisation (8e-5)
     base_lr = 8e-5
@@ -205,4 +205,4 @@ if __name__ == "__main__":
             stride +=    [ 0 ] + [ 1 ] + [ 0 ] + [ 1 ] * 5            + [ 0 ]
 
     label_name = ['label_1st_lower', 'label_lower']
-    writePrototxts(dataFolder, directory, batch_size, stepsize, layername, kernel, stride, outCH, transform_param, base_lr, d_caffemodel, label_name)
+    writePrototxts(path_in_caffe, dataFolder, directory, batch_size, stepsize, layername, kernel, stride, outCH, transform_param, base_lr, d_caffemodel, label_name)
