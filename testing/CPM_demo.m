@@ -35,3 +35,5 @@ rectangle = getrect(1);
 
 %% visualize, or extract variable heatMaps & prediction for your use
 visualize(test_image, heatMaps, prediction, param, rectangle, interestPart);
+%%
+

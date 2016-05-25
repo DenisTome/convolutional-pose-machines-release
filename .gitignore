@@ -10,3 +10,8 @@ testing/results/
 *.m~
 caffePath.cfg
 models/
+lsp_dataset.zip
+lspet_dataset.zip
+*.jpg
+tmp*
+

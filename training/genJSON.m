@@ -1,5 +1,7 @@
 function genJSON(dataset)
 
+dataset = 'MPI';
+
     addpath('util/jsonlab/');
 
     if(strcmp(dataset, 'MPI'))

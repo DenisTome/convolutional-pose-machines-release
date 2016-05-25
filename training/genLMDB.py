@@ -3,9 +3,9 @@ import numpy as np
 import json
 import cv2
 import lmdb
-import caffe
 import os.path
 import struct
+import caffe
 
 def writeLMDB(datasets, lmdb_path, validation):
 	env = lmdb.open(lmdb_path, map_size=int(1e12))
@@ -178,4 +178,4 @@ if __name__ == "__main__":
 	#writeLMDB(['LEEDS'], 'lmdb/LEEDS_PC', 0)
 	#writeLMDB(['FLIC'], 'lmdb/FLIC', 0)
 
-	writeLMDB(['MPI', 'LEEDS'], 'lmdb/MPI_LEEDS_alltrain', 0) # joint dataset
+	writeLMDB(['MPI', 'LEEDS'], 'lmdbTmp/MPI_LEEDS_alltrain', 0) # joint dataset

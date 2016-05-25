@@ -21,6 +21,7 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
 
     # produce data definition for deploy net
     if deploy == False:
+        # here we will return the new structure for loading h36m dataset
         n.data, n.tops['label'] = L.CPMData(cpmdata_param=dict(backend=1, source=data_source, batch_size=batch_size), 
                                                     transform_param=transform_param_in, ntop=2)
         n.tops[label_name[1]], n.tops[label_name[0]] = L.Slice(n.label, slice_param=dict(axis=1, slice_point=15), ntop=2)
@@ -152,7 +153,7 @@ lr_policy: "step"\n\
 gamma: 0.333\n\
 stepsize: %d\n\
 # Display every 100 iterations\n\
-display: 5\n\
+display: 50\n\
 # The maximum number of iterations\n\
 max_iter: 600000\n\
 # snapshot intermediate results\n\
@@ -166,13 +167,14 @@ solver_mode: GPU\n' % (base_lr, stepsize, folder_name)
 if __name__ == "__main__":
 
     ### Change here for different dataset
-    directory = 'prototxt/MPI_validation'
-    dataFolder = 'lmdb/MPI_validation'
+    directory = 'prototxt/H36M_validation'
+    dataFolder = 'lmdb/H36M_validation'
     stepsize = 136106 # stepsize to decrease learning rate. This should depend on your dataset size
     ###
 
     batch_size = 16
     d_caffemodel = '%s/caffemodel' % directory # the place you want to store your caffemodel
+    # should be higher due to random initialisation (8e-5)
     base_lr = 8e-5
     transform_param = dict(stride=8, crop_size_x=368, crop_size_y=368, 
                              target_dist=1.171, scale_prob=1, scale_min=0.7, scale_max=1.3,
