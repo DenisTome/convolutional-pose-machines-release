@@ -7,13 +7,23 @@ import os.path
 import struct
 import caffe
 
-def writeLMDB(datasets, lmdb_path, validation):
+def writeLMDB(datasets, lmdb_path, idxSetJoints = [], validation = True, samplingRate = 1):
+	if not os.path.exists(lmdb_path):
+		os.makedirs(lmdb_path)
 	env = lmdb.open(lmdb_path, map_size=int(1e12))
 	txn = env.begin(write=True)
 	data = []
 
 	for d in range(len(datasets)):
-		if(datasets[d] == "MPI"):
+		if(datasets[d] == "H36M"):
+			print datasets[d]
+			with open('jsonDatasets/H36M_annotations.json') as data_file:
+				data_this = json.load(data_file)
+				data_this = data_this['root']
+				data = data + data_this
+			numSample = len(data)
+			print numSample
+		elif(datasets[d] == "MPI"):
 			print datasets[d]
 			with open('json/MPI_annotations.json') as data_file:
 				data_this = json.load(data_file)
@@ -21,56 +31,40 @@ def writeLMDB(datasets, lmdb_path, validation):
 				data = data + data_this
 			numSample = len(data)
 			print numSample
-		elif(datasets[d] == "LEEDS"):
-			print datasets[d]
-			with open('json/LEEDS_annotations.json') as data_file:
-				data_this = json.load(data_file)
-				data_this = data_this['root']
-				data = data + data_this
-			numSample = len(data)
-			print numSample
-		elif(datasets[d] == "FLIC"):
-			datasets[d]
-			with open('json/FLIC_annotations.json') as data_file:
-				data_this = json.load(data_file)
-				data_this = data_this['root']
-				data = data + data_this
-			numSample = len(data)
-			print numSample
-	
+
+	newIdx = range(0, numSample, samplingRate)	
+	numSample = len(newIdx)
 	random_order = np.random.permutation(numSample).tolist()
 	
-	isValidationArray = [data[i]['isValidation'] for i in range(numSample)];
+	isValidationArray = [data[i]['isValidation'] for i in newIdx];
 	if(validation == 1):
+		totalWriteCount = isValidationArray.count(1.0);
+ 	else:
 		totalWriteCount = isValidationArray.count(0.0);
-	else:
-		totalWriteCount = len(data)
+# 	if(validation == 1):
+#		totalWriteCount = isValidationArray.count(0.0);
+# 	else:
+#		totalWriteCount = len(data)
 	print 'going to write %d images..' % totalWriteCount;
 	writeCount = 0
 
 	for count in range(numSample):
-		idx = random_order[count]
-		if (data[idx]['isValidation'] != 0 and validation == 1):
+		idx = newIdx[random_order[count]]
+		#if (data[idx]['isValidation'] != 0 and validation == 1):
+		#	print '%d/%d skipped' % (count,idx)
+		#	continue
+
+		if (data[idx]['isValidation'] != validation):
 			print '%d/%d skipped' % (count,idx)
 			continue
-		#print idx
 
-		if "MPI" in data[idx]['dataset']:
-			path_header = '../dataset/MPI/images/'
-		elif "LEEDS" in data[idx]['dataset']:
-			path_header = '../dataset/LEEDS/'
-		elif "FLIC" in data[idx]['dataset']:
-			path_header = '../dataset/FLIC/'
-		
-		img = cv2.imread(os.path.join(path_header, data[idx]['img_paths']))
+		img = cv2.imread(data[idx]['img_paths'])
+           # img = cv2.imread(os.path.join(data[idx]['img_paths'])) -> not needed for the new json
 		height = img.shape[0]
 		width = img.shape[1]
-		if(width < 64):
-			img = cv2.copyMakeBorder(img,0,0,0,64-width,cv2.BORDER_CONSTANT,value=(128,128,128))
-			print 'saving padded image!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-			cv2.imwrite('padded_img.jpg', img)
-			width = 64
-			# no modify on width, because we want to keep information
+
+           # same size of the image (for framework reasons) even though the
+           # amount of data is much less
 		meta_data = np.zeros(shape=(height,width,1), dtype=np.uint8)
 		#print type(img), img.shape
 		#print type(meta_data), meta_data.shape
@@ -112,14 +106,32 @@ def writeLMDB(datasets, lmdb_path, validation):
 		for i in range(len(scale_provided_binary)):
 			meta_data[clidx][i] = ord(scale_provided_binary[i])
 		clidx = clidx + 1
-		# (d) joint_self (3*16) or (3*22) (float) (3 line)
-		joints = np.asarray(data[idx]['joint_self']).T.tolist() # transpose to 3*16
+		# (d) joint_self (3*17) or (3*32) (float) (3 line)
+		joints_curr_frame = data[idx]['joint_self']
+		if len(idxSetJoints) > 0:
+			joints_curr_frame = [0] * len(idxSetJoints)
+			for i in range(len(idxSetJoints)):
+				joints_curr_frame[i] = data[idx]['joint_self'][idxSetJoints[i]]
+		joints = np.asarray(joints_curr_frame).T.tolist() # transpose to 3*#joints
 		for i in range(len(joints)):
 			row_binary = float2bytes(joints[i])
 			for j in range(len(row_binary)):
 				meta_data[clidx][j] = ord(row_binary[j])
 			clidx = clidx + 1
-		# (e) check nop, prepare arrays
+           # (e) joint_self (3*17) or (3*32) (float) (3 line)
+		joints3d_curr_frame = data[idx]['joint_self_3d']
+		if len(idxSetJoints) > 0:
+			joints3d_curr_frame = [0] * len(idxSetJoints)
+			for i in range(len(idxSetJoints)):
+				joints3d_curr_frame[i] = data[idx]['joint_self_3d'][idxSetJoints[i]]
+		joints3d = np.asarray(joints3d_curr_frame).T.tolist() # transpose to 3*#joints
+		for i in range(len(joints3d)):
+			row_binary = float2bytes(joints3d[i])
+			for j in range(len(row_binary)):
+				meta_data[clidx][j] = ord(row_binary[j])
+			clidx = clidx + 1
+
+		# (f) check nop, prepare arrays
 		if(nop!=0):
 			if(nop==1):
 				joint_other = [data[idx]['joint_others']]
@@ -129,18 +141,18 @@ def writeLMDB(datasets, lmdb_path, validation):
 				joint_other = data[idx]['joint_others']
 				objpos_other = data[idx]['objpos_other']
 				scale_provided_other = data[idx]['scale_provided_other']
-			# (f) objpos_other_x (float), objpos_other_y (float) (nop lines)
+			# (g) objpos_other_x (float), objpos_other_y (float) (nop lines)
 			for i in range(nop):
 				objpos_binary = float2bytes(objpos_other[i])
 				for j in range(len(objpos_binary)):
 					meta_data[clidx][j] = ord(objpos_binary[j])
 				clidx = clidx + 1
-			# (g) scale_provided_other (nop floats in 1 line)
+			# (h) scale_provided_other (nop floats in 1 line)
 			scale_provided_other_binary = float2bytes(scale_provided_other)
 			for j in range(len(scale_provided_other_binary)):
 				meta_data[clidx][j] = ord(scale_provided_other_binary[j])
 			clidx = clidx + 1
-			# (h) joint_others (3*16) (float) (nop*3 lines)
+			# (j) joint_others (3*16) (float) (nop*3 lines)
 			for n in range(nop):
 				joints = np.asarray(joint_other[n]).T.tolist() # transpose to 3*16
 				for i in range(len(joints)):
@@ -148,8 +160,8 @@ def writeLMDB(datasets, lmdb_path, validation):
 					for j in range(len(row_binary)):
 						meta_data[clidx][j] = ord(row_binary[j])
 					clidx = clidx + 1
-		
-		# print meta_data[0:12,0:48] 
+		# size 10 x 67
+		# print meta_data[0:11,0:68]
 		# total 7+4*nop lines
 		img4ch = np.concatenate((img, meta_data), axis=2)
 		img4ch = np.transpose(img4ch, (2, 0, 1))
@@ -177,5 +189,11 @@ if __name__ == "__main__":
 	#writeLMDB(['MPI'], 'lmdb/MPI_alltrain', 0)
 	#writeLMDB(['LEEDS'], 'lmdb/LEEDS_PC', 0)
 	#writeLMDB(['FLIC'], 'lmdb/FLIC', 0)
+     
+     # TODO: change order to have something similar to the previous dataset 
+     joints = [0,1,2,3,6,7,8,12,13,14,15,17,18,19,25,26,27]
+     s = 10
+     print "Generating train and val lmdb databases sampling every %d frames" % s
+     writeLMDB(['H36M'], 'lmdb/train', idxSetJoints = joints, validation = False, samplingRate = s)
+     writeLMDB(['H36M'], 'lmdb/val', idxSetJoints = joints, validation = True, samplingRate = s)
 
-	writeLMDB(['MPI', 'LEEDS'], 'lmdbTmp/MPI_LEEDS_alltrain', 0) # joint dataset

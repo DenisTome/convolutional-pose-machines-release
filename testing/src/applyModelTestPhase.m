@@ -1,4 +1,4 @@
-function [heatMaps, prediction] = applyModelGivenNet(test_image, param, rectangle, net, plot_rect, verbose)
+function [heatMaps, prediction] = applyModelTestPhase(test_image, param, rectangle, net, plot_rect, verbose)
 
 if ~exist('plot_rect','var')
     plot_rect = 1;
@@ -11,7 +11,7 @@ end
 %% Select model and other parameters from param
 model = param.model(param.modelID);
 boxsize = model.boxsize;
-np = model.np; np = 17;
+np = model.np;
 nstage = model.stage;
 if isa(test_image,'uint8')
     oriImg = test_image;
@@ -20,30 +20,31 @@ else
 end
 
 %% Apply model, with searching thourgh a range of scales
-octave = param.octave;
-% set the center and roughly scale range (overwrite the config!) according to the rectangle
-x_start = max(rectangle(1), 1);
-x_end = min(rectangle(1)+rectangle(3), size(oriImg,2));
-y_start = max(rectangle(2), 1);
-y_end = min(rectangle(2)+rectangle(4), size(oriImg,1));
-center = [(x_start + x_end)/2, (y_start + y_end)/2];
+% octave = param.octave;
+% % set the center and roughly scale range (overwrite the config!) according to the rectangle
+% x_start = max(rectangle(1), 1);
+% x_end = min(rectangle(1)+rectangle(3), size(oriImg,2));
+% y_start = max(rectangle(2), 1);
+% y_end = min(rectangle(2)+rectangle(4), size(oriImg,1));
+% center = [(x_start + x_end)/2, (y_start + y_end)/2];
+% 
+% % determine scale range
+% middle_range = (y_end - y_start) / size(oriImg,1) * 1.2;
+% starting_range = middle_range * 0.8;
+% ending_range = middle_range * 3.0;
+% 
+% starting_scale = boxsize/(size(oriImg,1)*ending_range);
+% ending_scale = boxsize/(size(oriImg,1)*starting_range);
+% multiplier = 2.^(log2(starting_scale):(1/octave):log2(ending_scale));
+% 
+% % data container for each scale and stage
+% score = cell(nstage, length(multiplier));
+% pad = cell(1, length(multiplier));
+% ori_size = cell(1, length(multiplier));
 
-% determine scale range
-middle_range = (y_end - y_start) / size(oriImg,1) * 1.2;
-starting_range = middle_range * 0.8;
-ending_range = middle_range * 3.0;
-
-starting_scale = boxsize/(size(oriImg,1)*ending_range);
-ending_scale = boxsize/(size(oriImg,1)*starting_range);
-multiplier = 2.^(log2(starting_scale):(1/octave):log2(ending_scale));
-
-% data container for each scale and stage
-score = cell(nstage, length(multiplier));
-pad = cell(1, length(multiplier));
-ori_size = cell(1, length(multiplier));
-
-colors = hsv(length(multiplier));
-for m = 1:length(multiplier)
+score = {};
+%colors = hsv(length(multiplier));
+%for m = 1:length(multiplier)
     scale = multiplier(m);
 
     imageToTest = imresize(oriImg, scale);
@@ -82,7 +83,7 @@ for m = 1:length(multiplier)
     score(:,m) = cellfun(@(x) imresize(x, [size(oriImg,2) size(oriImg,1)]), score(:,m), 'UniformOutput', false);
     
     %figure(m+2); imagesc(score{end,m}(:,:,1)');
-end
+%end
 
 %% summing the heatMaps results 
 heatMaps = cell(1, nstage);

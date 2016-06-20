@@ -6,14 +6,15 @@ function param = configFromExternal()
 param.use_gpu = 1;
 
 % GPU device number (doesn't matter for CPU mode)
-GPUdeviceNumber = 0;
+GPUdeviceNumber = 1;
 
 % Select model (default: 1)
 % 1: MPII+LSP(PC) 6-stage CPM
 % 2: MPII 6-stage CPM
 % 3: LSP(PC) 6-stage CPM
 % 4: FLIC 4-stage CPM (upper body only)
-param.modelID = 1;
+% 5: H36M 6-stage (upper body only)
+param.modelID = 5;
 
 % Scaling paramter: starting and ending ratio of person height to image
 % height, and number of scales per octave
@@ -101,3 +102,15 @@ param.model(4).limbs = [1 2; 2 3; 4 5; 5 6];
 param.model(4).part_str = {'Lsho', 'Lelb', 'Lwri', ...
                            'Rsho', 'Relb', 'Rwri', ...
                            'Lhip', 'Rhip', 'head', 'bkg'};
+
+param.model(5).caffemodel = [];
+param.model(5).deployFile = [];
+param.model(5).description = 'H36M 6 stages';
+param.model(5).description_short = 'H36M_6s';
+param.model(5).boxsize = 368;
+param.model(5).padValue = 128;
+param.model(5).np = 17;
+param.model(5).sigma = 21;
+param.model(5).stage = 6;
+param.model(5).limbs = [];
+param.model(5).part_str = {};

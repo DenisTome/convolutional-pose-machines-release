@@ -3,10 +3,6 @@ import os
 import math
 import argparse
 import json
-with open('../caffePath.cfg') as f:
-    caffe_path = f.readlines()
-sys.path.append('%s/python' % caffe_path)
-print 'specified caffe path: %s' % caffe_path
 import caffe
 from caffe import layers as L  # pseudo module using __getattr__ magic to generate protobuf messages
 from caffe import params as P  # pseudo module using __getattr__ magic to generate protobuf messages
@@ -24,7 +20,7 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
         # here we will return the new structure for loading h36m dataset
         n.data, n.tops['label'] = L.CPMData(cpmdata_param=dict(backend=1, source=data_source, batch_size=batch_size), 
                                                     transform_param=transform_param_in, ntop=2)
-        n.tops[label_name[1]], n.tops[label_name[0]] = L.Slice(n.label, slice_param=dict(axis=1, slice_point=15), ntop=2)
+        n.tops[label_name[1]], n.tops[label_name[0]] = L.Slice(n.label, slice_param=dict(axis=1, slice_point=18), ntop=2)
     else:
         input = "data"
         dim1 = 1
@@ -35,7 +31,13 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
         # we will later have to remove this layer from the serialization string, since this is just a placeholder
         n.data = L.Layer()
 
-    # something special before everything
+    # Slice layer slices input layer to multiple output along a given dimension
+    # axis: 1 define in which dimension to slice
+    # slice_point: 3 define the index in the selected dimension (the number of
+    # indices must be equal to the number of top blobs minus one)
+    # Considering input Nx3x1x1, by slice_point = 2
+    # top1 : Nx2x1x1
+    # top2 : Nx1x1x1
     n.image, n.center_map = L.Slice(n.data, slice_param=dict(axis=1, slice_point=3), ntop=2)
     n.pool_center_lower = L.Pooling(n.center_map, kernel_size=9, stride=8, pool=P.Pooling.AVE)
 
@@ -48,16 +50,25 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
     state = 'image' # can be image or fuse
     share_point = 0
 
+    # TODO: first and last layer of each stage must be changed to account for a larger number of inputs and outputs
+    # TODO: add functionality to replicate data layer for train and validation phases
     for l in range(0, len(layername)):
         if layername[l] == 'C':
             if state == 'image':
                 conv_name = 'conv%d_stage%d' % (conv_counter, stage)
             else:
                 conv_name = 'Mconv%d_stage%d' % (conv_counter, stage)
-            if stage == 1:
-                lr_m = 5
+            #if stage == 1:
+            #    lr_m = 5
+            #else:
+            #    lr_m = 1
+            if ((stage == 1 and conv_counter == 7) or
+                (stage > 1 and state != 'image' and (conv_counter in [1, 5]))):
+                conv_name = '%s_new' % conv_name
+                lr_m = 1 # changed -> it used to be 5 for stage 1 and 1 for stage n
             else:
-                lr_m = 1
+                # Set learning rate multiplier to 0 for all layers but the new one
+                lr_m = 1e-3 # 0
             n.tops[conv_name] = L.Convolution(n.tops[last_layer], kernel_size=kernel[l],
                                                   num_output=outCH[l], pad=int(math.floor(kernel[l]/2)),
                                                   param=[dict(lr_mult=lr_m, decay_mult=1), dict(lr_mult=lr_m*2, decay_mult=0)],
@@ -124,7 +135,7 @@ def setLayers(data_source, batch_size, layername, kernel, stride, outCH, label_n
 
 
 
-def writePrototxts(path_in_caffe, dataFolder, dir, batch_size, stepsize, layername, kernel, stride, outCH, transform_param_in, base_lr, folder_name, label_name):
+def writePrototxts(dataFolder, dir, batch_size, stepsize, layername, kernel, stride, outCH, transform_param_in, base_lr, folder_name, label_name, test_iter, test_interval, maxiter):
     # write the net prototxt files out
     with open('%s/pose_train_test.prototxt' % dir, 'w') as f:
         print 'writing %s/pose_train_test.prototxt' % dir
@@ -137,14 +148,16 @@ def writePrototxts(path_in_caffe, dataFolder, dir, batch_size, stepsize, layerna
         f.write(str_to_write)
 
     with open('%s/pose_solver.prototxt' % dir, "w") as f:
-        solver_string = getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir)
+        solver_string = getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir, test_iter, test_interval, maxiter)
         print 'writing %s/pose_solver.prototxt' % dir
         f.write('%s' % solver_string)
 
 
-def getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir):
+def getSolverPrototxt(path_in_caffe, base_lr, folder_name, stepsize, dir, test_iter, test_interval, maxiter):
     string = 'net: "%s/%s/pose_train_test.prototxt"\n\
 # The base learning rate, momentum and the weight decay of the network.\n\
+#test_iter: %d\n\
+#test_intervall: %d\n\
 base_lr: %f\n\
 momentum: 0.9\n\
 weight_decay: 0.0005\n\
@@ -153,32 +166,44 @@ lr_policy: "step"\n\
 gamma: 0.333\n\
 stepsize: %d\n\
 # Display every 100 iterations\n\
-display: 50\n\
+display: 5\n\
 # The maximum number of iterations\n\
-max_iter: 600000\n\
+max_iter: %d\n\
 # snapshot intermediate results\n\
-snapshot: 1000\n\
+snapshot: 5000\n\
 snapshot_prefix: "%s/%s/pose"\n\
 # solver mode: CPU or GPU\n\
-solver_mode: GPU\n' % (path_in_caffe, dir, base_lr, stepsize, path_in_caffe, folder_name)
+solver_mode: GPU\n' % (path_in_caffe, dir, test_iter, test_interval, base_lr, stepsize, maxiter, path_in_caffe, folder_name)
     return string
 
 if __name__ == "__main__":
 
     ### Change here for different dataset
     path_in_caffe = 'models/cpm_architecture'
-    directory = 'prototxt/H36M_validation'
-    dataFolder = '%s/lmdb/H36M_alltrain' % path_in_caffe
-    stepsize = 136106 # stepsize to decrease learning rate. This should depend on your dataset size
-    ###
-
+    directory = 'prototxt'
+    dataFolder = '%s/lmdb/train' % (path_in_caffe)
+    stepsize = 15000 # stepsize to decrease learning rate. This should depend on your dataset size
+    test_interval = 5000
     batch_size = 8
+    numEpochs = 6
+    trainSize = 115327
+    testSize = 40649
+    ###
+   
+    maxiter = (int)(trainSize/batch_size*numEpochs)
+    test_iter = (int)(testSize/batch_size*numEpochs)
+
     d_caffemodel = '%s/caffemodel' % directory # the place you want to store your caffemodel
     # should be higher due to random initialisation (8e-5)
-    base_lr = 8e-5
-    transform_param = dict(stride=8, crop_size_x=368, crop_size_y=368, 
+    # base_lr = 1e-5 (8e-5)
+    base_lr = 1e-4
+    # num_parts and np_in_lmdb are two parameters that are used inside the framework to move from one
+    # dataset definition to another. Num_parts is the number of parts we want to have, while
+    # np_in_lmdb is the number of joints saved in lmdb format using the dataset whole set of joints.
+    transform_param = dict(stride=8, crop_size_x=368, crop_size_y=368, visualize=False,
                              target_dist=1.171, scale_prob=1, scale_min=0.7, scale_max=1.3,
-                             max_rotate_degree=40, center_perterb_max=0, do_clahe=False)
+                             max_rotate_degree=40, center_perterb_max=0, do_clahe=False, 
+                             num_parts=17, np_in_lmdb=17, transform_body_joint=False)
     nCP = 3
     CH = 128
     stage = 6
@@ -189,20 +214,20 @@ if __name__ == "__main__":
     
     layername = ['C', 'P'] * nCP + ['C','C','D','C','D','C'] + ['L'] # first-stage
     kernel =    [ 9,  3 ] * nCP + [ 5 , 9 , 0 , 1 , 0 , 1 ] + [0] # first-stage
-    outCH =     [128, 128] * nCP + [ 32,512, 0 ,512, 0 ,15 ] + [0] # first-stage
+    outCH =     [128, 128] * nCP + [ 32,512, 0 ,512, 0 ,18 ] + [0] # first-stage
     stride =    [ 1 ,  2 ] * nCP + [ 1 , 1 , 0 , 1 , 0 , 1 ] + [0] # first-stage
 
     if stage >= 2:
         layername += ['C', 'P'] * nCP + ['$'] + ['C'] + ['@'] + ['C'] * 5            + ['L']
-        outCH +=     [128, 128] * nCP + [ 0 ] + [32 ] + [ 0 ] + [128,128,128,128,15] + [ 0 ]
+        outCH +=     [128, 128] * nCP + [ 0 ] + [32 ] + [ 0 ] + [128,128,128,128,18] + [ 0 ]
         kernel +=    [ 9,   3 ] * nCP + [ 0 ] + [ 5 ] + [ 0 ] + [11, 11, 11, 1,   1] + [ 0 ]
         stride +=    [ 1 ,  2 ] * nCP + [ 0 ] + [ 1 ] + [ 0 ] + [ 1 ] * 5            + [ 0 ]
 
         for s in range(3, stage+1):
             layername += ['$'] + ['C'] + ['@'] + ['C'] * 5            + ['L']
-            outCH +=     [ 0 ] + [32 ] + [ 0 ] + [128,128,128,128,15] + [ 0 ]
+            outCH +=     [ 0 ] + [32 ] + [ 0 ] + [128,128,128,128,18] + [ 0 ]
             kernel +=    [ 0 ] + [ 5 ] + [ 0 ] + [11, 11, 11,  1, 1 ] + [ 0 ]
             stride +=    [ 0 ] + [ 1 ] + [ 0 ] + [ 1 ] * 5            + [ 0 ]
 
     label_name = ['label_1st_lower', 'label_lower']
-    writePrototxts(path_in_caffe, dataFolder, directory, batch_size, stepsize, layername, kernel, stride, outCH, transform_param, base_lr, d_caffemodel, label_name)
+    writePrototxts(dataFolder, directory, batch_size, stepsize, layername, kernel, stride, outCH, transform_param, base_lr, d_caffemodel, label_name, test_iter, test_interval, maxiter)

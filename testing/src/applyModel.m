@@ -64,8 +64,8 @@ for m = 1:length(multiplier)
         plot([x(1) x(1) x(2) x(2) x(1)], [y(1) y(2) y(2) y(1) y(1)], 'Color', colors(m,:));
         drawnow;
     end
-    % figure(m+2); imshow(imageToTest);
-    
+  
+    % ADDED A 4TH DIMENSION WITH THE HEAT MAP OF THE CENTER
     imageToTest = preprocess(imageToTest, 0.5, param);
     
     if (verbose)
@@ -110,7 +110,7 @@ end
 function img_out = preprocess(img, mean, param)
     img_out = double(img)/256;  
     img_out = double(img_out) - mean;
-    img_out = permute(img_out, [2 1 3]);
+    img_out = permute(img_out, [2 1 3]); % CHANGE ORDER
     
     img_out = img_out(:,:,[3 2 1]); % BGR for opencv training in caffe !!!!!
     boxsize = param.model(param.modelID).boxsize;
