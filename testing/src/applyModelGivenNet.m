@@ -49,7 +49,7 @@ for m = 1:length(multiplier)
     imageToTest = imresize(oriImg, scale);
     ori_size{m} = size(imageToTest);
     center_s = center * scale;
-    [imageToTest, pad{m}] = padAround(imageToTest, boxsize, center_s, model.padValue); % into boxsize, which is multipler of 4
+    [imageToTest, pad{m}] = padAround(imageToTest, boxsize, center_s, model.padValue); % crop and reshape to 368x368x4
     
     % plot bbox indicating what actually goes into CPM
     if (plot_rect)
@@ -87,14 +87,14 @@ end
 %% summing the heatMaps results 
 heatMaps = cell(1, nstage);
 final_score = cell(1, nstage);
-for s = 1:nstage
-    final_score{s} = zeros(size(score{1,1}));
-    for m = 1:size(score,2)
-        final_score{s} = final_score{s} + score{s,m};
-    end
-    heatMaps{s} = permute(final_score{s}, [2 1 3]);
-    heatMaps{s} = heatMaps{s} / size(score,2);
-end
+% for s = 1:nstage
+%     final_score{s} = zeros(size(score{1,1}));
+%     for m = 1:size(score,2)
+%         final_score{s} = final_score{s} + score{s,m};
+%     end
+%     heatMaps{s} = permute(final_score{s}, [2 1 3]);
+%     heatMaps{s} = heatMaps{s} / size(score,2);
+% end
 
 %% tmp
 m = 12;
@@ -113,7 +113,7 @@ end
 function img_out = preprocess(img, mean, param)
     img_out = double(img)/256;  
     img_out = double(img_out) - mean;
-    img_out = permute(img_out, [2 1 3]);
+    img_out = permute(img_out, [2 1 3]); % rotate columns with rows (faster for caffe to compute)
     
     img_out = img_out(:,:,[3 2 1]); % BGR for opencv training in caffe !!!!!
     boxsize = param.model(param.modelID).boxsize;

@@ -1,8 +1,4 @@
-function [heatMaps, prediction] = applyModelTestPhase(test_image, param, rectangle, net, plot_rect, verbose)
-
-if ~exist('plot_rect','var')
-    plot_rect = 1;
-end
+function [heatMaps, prediction] = applyModelTestPhase(test_image, param, rectangle, net, verbose)
 
 if ~exist('verbose','var')
     verbose = 1;
@@ -13,157 +9,87 @@ model = param.model(param.modelID);
 boxsize = model.boxsize;
 np = model.np;
 nstage = model.stage;
-if isa(test_image,'uint8')
-    oriImg = test_image;
-else
-    oriImg = imread(test_image);
-end
 
 %% Apply model, with searching thourgh a range of scales
-% octave = param.octave;
-% % set the center and roughly scale range (overwrite the config!) according to the rectangle
-% x_start = max(rectangle(1), 1);
-% x_end = min(rectangle(1)+rectangle(3), size(oriImg,2));
-% y_start = max(rectangle(2), 1);
-% y_end = min(rectangle(2)+rectangle(4), size(oriImg,1));
-% center = [(x_start + x_end)/2, (y_start + y_end)/2];
-% 
-% % determine scale range
-% middle_range = (y_end - y_start) / size(oriImg,1) * 1.2;
-% starting_range = middle_range * 0.8;
-% ending_range = middle_range * 3.0;
-% 
-% starting_scale = boxsize/(size(oriImg,1)*ending_range);
-% ending_scale = boxsize/(size(oriImg,1)*starting_range);
-% multiplier = 2.^(log2(starting_scale):(1/octave):log2(ending_scale));
-% 
-% % data container for each scale and stage
-% score = cell(nstage, length(multiplier));
-% pad = cell(1, length(multiplier));
-% ori_size = cell(1, length(multiplier));
 
-score = {};
-%colors = hsv(length(multiplier));
-%for m = 1:length(multiplier)
-    scale = multiplier(m);
+[imageToTest, pad] = reshapeImage(test_image, rectangle, boxsize);
+imageToTest = preprocess(imageToTest, 0.5, param);
+    
+tic;
+score = applyDNN(imageToTest, net, nstage);
+time = toc;
+if (verbose)
+    fprintf('done, elapsed time: %.3f sec\n', time);
+end
 
-    imageToTest = imresize(oriImg, scale);
-    ori_size{m} = size(imageToTest);
-    center_s = center * scale;
-    [imageToTest, pad{m}] = padAround(imageToTest, boxsize, center_s, model.padValue); % into boxsize, which is multipler of 4
-    
-    % plot bbox indicating what actually goes into CPM
-    if (plot_rect)
-        figure(1);
-        pad_current = pad{m};
-        x = [0-pad_current(2), size(oriImg,2)*scale + pad_current(4)]/scale;
-        y = [0-pad_current(1), size(oriImg,1)*scale + pad_current(3)]/scale;
-        plot([x(1) x(1) x(2) x(2) x(1)], [y(1) y(2) y(2) y(1) y(1)], 'Color', colors(m,:));
-        drawnow;
-    end
-    % figure(m+2); imshow(imageToTest);
-    
-    imageToTest = preprocess(imageToTest, 0.5, param);
-    
-    if (verbose)
-        fprintf('Running FPROP for scale #%d/%d....', m, length(multiplier));
-    end
-        tic;
-        score(:,m) = applyDNN(imageToTest, net, nstage);
-        time = toc;
-    if (verbose)
-        fprintf('done, elapsed time: %.3f sec\n', time);
-    end
-    
-    pool_time = size(imageToTest,1) / size(score{1,m},1); % stride-8
-    % make heatmaps into the size of original image according to pad and scale
-    % this part can be optimizied if needed
-    score(:,m) = cellfun(@(x) imresize(x, pool_time), score(:,m), 'UniformOutput', false);
-    score(:,m) = cellfun(@(x) resizeIntoScaledImg(x, pad{m}), score(:,m), 'UniformOutput', false);
-    score(:,m) = cellfun(@(x) imresize(x, [size(oriImg,2) size(oriImg,1)]), score(:,m), 'UniformOutput', false);
-    
-    %figure(m+2); imagesc(score{end,m}(:,:,1)');
-%end
+pool_time = size(imageToTest,1) / size(score{1},1); % stride-8
+% from 46 x 46 x 18 to 368 x 368 x 18
+score = cellfun(@(x) imresize(x, pool_time), score, 'UniformOutput', false);
+% from 368 x 368 x 18 to crop_h x crop_w x 18
+score = cellfun(@(x) transposeToMatlabConvention(x), score, 'UniformOutput', false);
+score = cellfun(@(x) imresize(x, round([rectangle(4), rectangle(3)])), score, 'UniformOutput', false);
+score = cellfun(@(x) resizeIntoScaledImg(x, pad), score, 'UniformOutput', false);
 
 %% summing the heatMaps results 
-heatMaps = cell(1, nstage);
-final_score = cell(1, nstage);
-for s = 1:nstage
-    final_score{s} = zeros(size(score{1,1}));
-    for m = 1:size(score,2)
-        final_score{s} = final_score{s} + score{s,m};
-    end
-    heatMaps{s} = permute(final_score{s}, [2 1 3]);
-    heatMaps{s} = heatMaps{s} / size(score,2);
-end
-
-%% tmp
-m = 12;
-s = 6;
-final_score{s} = score{s,m};
-heatMaps{s} = permute(final_score{s}, [2 1 3]);
-showHeatMaps(test_image,heatMaps,rectangle,1);
+heatMaps = score;
 
 %% generate prediction from last-stage heatMaps (most refined)
+score = score{1};
 prediction = zeros(np,2);
 for j = 1:np
-    [prediction(j,1), prediction(j,2)] = findMaximum(final_score{end}(:,:,j));
+    [prediction(j,2), prediction(j,1)] = findMaximum(score(:,:,j));
+end
 end
 
+function [img_out, pad] = reshapeImage(img, rectangle, boxsize)
+    rectangle = round(rectangle);
+    new_img = img(rectangle(2):rectangle(2)+rectangle(4),rectangle(1):rectangle(1)+rectangle(3),:);
+    img_out = imresize(new_img, [boxsize, boxsize]);
+    %scale = [boxsize/rectangle(3), boxsize/rectangle(4)];
+    pad = zeros(1,4);
+    % Order: (up, left, down, right)
+    pad(1) = - rectangle(2) + 1; % crop start at rect(2) -> we have to add aboce rect(2)-1 px
+    pad(2) = - rectangle(1) + 1;
+    pad(3) = - (size(img,1) - rectangle(2) - rectangle(4)) - 1;
+    pad(4) = - (size(img,2) - rectangle(1) - rectangle(3)) - 1;
+end
 
 function img_out = preprocess(img, mean, param)
     img_out = double(img)/256;  
     img_out = double(img_out) - mean;
+    % for Matlab x are the rows and y the columns 
+    % rotate columns with rows (to adapt to the caffe version)
     img_out = permute(img_out, [2 1 3]);
     
     img_out = img_out(:,:,[3 2 1]); % BGR for opencv training in caffe !!!!!
     boxsize = param.model(param.modelID).boxsize;
     centerMapCell = produceCenterLabelMap([boxsize boxsize], boxsize/2, boxsize/2, param.model(param.modelID).sigma);
     img_out(:,:,4) = centerMapCell{1};
+end
     
 function scores = applyDNN(images, net, nstage)
     input_data = {single(images)};
     % do forward pass to get scores
     % scores are now Width x Height x Channels x Num
     net.forward(input_data);
-    scores = cell(1, nstage);
-    for s = 1:nstage
-        string_to_search = sprintf('stage%d', s);
-        blob_id_C = strfind(net.blob_names, string_to_search);
-        blob_id = find(not(cellfun('isempty', blob_id_C)));
-        blob_id = blob_id(end);
-        scores{s} = net.blob_vec(blob_id).get_data();
-    end
+    string_to_search = sprintf('stage%d', nstage);
+    blob_id_C = strfind(net.blob_names, string_to_search);
+    blob_id = find(not(cellfun('isempty', blob_id_C)));
+    blob_id = blob_id(end);
+    scores = {net.blob_vec(blob_id).get_data()};
+end
     
-function [img_padded, pad] = padAround(img, boxsize, center, padValue)
-    center = round(center);
-    h = size(img, 1);
-    w = size(img, 2);
-    pad(1) = boxsize/2 - center(2); % up
-    pad(3) = boxsize/2 - (h-center(2)); % down
-    pad(2) = boxsize/2 - center(1); % left
-    pad(4) = boxsize/2 - (w-center(1)); % right
-    
-    pad_up = repmat(img(1,:,:), [pad(1) 1 1])*0 + padValue;
-    img_padded = [pad_up; img];
-    pad_left = repmat(img_padded(:,1,:), [1 pad(2) 1])*0 + padValue;
-    img_padded = [pad_left img_padded];
-    pad_down = repmat(img_padded(end,:,:), [pad(3) 1 1])*0 + padValue;
-    img_padded = [img_padded; pad_down];
-    pad_right = repmat(img_padded(:,end,:), [1 pad(4) 1])*0 + padValue;
-    img_padded = [img_padded pad_right];
-    
-    center = center + [max(0,pad(2)) max(0,pad(1))];
-
-    img_padded = img_padded(center(2)-(boxsize/2-1):center(2)+boxsize/2, center(1)-(boxsize/2-1):center(1)+boxsize/2, :); %cropping if needed
-
 function [x,y] = findMaximum(map)
     [~,i] = max(map(:));
     [x,y] = ind2sub(size(map), i);
-    
+end
+  
+function score = transposeToMatlabConvention(score)
+    score = permute(score, [2 1 3]);
+end
+
 function score = resizeIntoScaledImg(score, pad)
     np = size(score,3)-1;
-    score = permute(score, [2 1 3]);
     if(pad(1) < 0)
         padup = cat(3, zeros(-pad(1), size(score,2), np), ones(-pad(1), size(score,2), 1));
         score = [padup; score]; % pad up
@@ -191,7 +117,7 @@ function score = resizeIntoScaledImg(score, pad)
     else
         score(:,end-pad(4)+1:end, :) = []; % crop right
     end
-    score = permute(score, [2 1 3]);
+end
     
 function label = produceCenterLabelMap(im_size, x, y, sigma)
     % this function generates a gaussian peak centered at position (x,y)
@@ -202,3 +128,4 @@ function label = produceCenterLabelMap(im_size, x, y, sigma)
     D2 = X.^2 + Y.^2;
     Exponent = D2 ./ 2.0 ./ sigma ./ sigma;
     label{1} = exp(-Exponent);
+end

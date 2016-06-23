@@ -6,7 +6,7 @@ function param = configFromExternal()
 param.use_gpu = 1;
 
 % GPU device number (doesn't matter for CPU mode)
-GPUdeviceNumber = 1;
+GPUdeviceNumber = 0;
 
 % Select model (default: 1)
 % 1: MPII+LSP(PC) 6-stage CPM
