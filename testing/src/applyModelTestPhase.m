@@ -1,4 +1,4 @@
-function [heatMaps, prediction] = applyModelTestPhase(test_image, param, rectangle, net, verbose)
+function [heatMaps, prediction] = applyModelTestPhase(test_image, param, rectangle, net, masks, verbose)
 
 if ~exist('verbose','var')
     verbose = 1;
@@ -13,7 +13,7 @@ nstage = model.stage;
 %% Apply model, with searching thourgh a range of scales
 
 [imageToTest, pad] = reshapeImage(test_image, rectangle, boxsize);
-imageToTest = preprocess(imageToTest, 0.5, param);
+imageToTest = preprocess(imageToTest, 0.5, param, masks);
     
 tic;
 score = applyDNN(imageToTest, net, nstage);
@@ -43,7 +43,7 @@ end
 
 function [img_out, pad] = reshapeImage(img, rectangle, boxsize)
     rectangle = round(rectangle);
-    new_img = img(rectangle(2):rectangle(2)+rectangle(4),rectangle(1):rectangle(1)+rectangle(3),:);
+    new_img = img(rectangle(2):rectangle(2)+rectangle(4)-1,rectangle(1):rectangle(1)+rectangle(3)-1,:);
     img_out = imresize(new_img, [boxsize, boxsize]);
     %scale = [boxsize/rectangle(3), boxsize/rectangle(4)];
     pad = zeros(1,4);
@@ -54,7 +54,7 @@ function [img_out, pad] = reshapeImage(img, rectangle, boxsize)
     pad(4) = - (size(img,2) - rectangle(1) - rectangle(3)) - 1;
 end
 
-function img_out = preprocess(img, mean, param)
+function img_out = preprocess(img, mean, param, masks)
     img_out = double(img)/256;  
     img_out = double(img_out) - mean;
     % for Matlab x are the rows and y the columns 
@@ -64,7 +64,9 @@ function img_out = preprocess(img, mean, param)
     img_out = img_out(:,:,[3 2 1]); % BGR for opencv training in caffe !!!!!
     boxsize = param.model(param.modelID).boxsize;
     centerMapCell = produceCenterLabelMap([boxsize boxsize], boxsize/2, boxsize/2, param.model(param.modelID).sigma);
+    metadataChannel = generateMetadataChannel([boxsize boxsize],masks);
     img_out(:,:,4) = centerMapCell{1};
+    img_out(:,:,5) = metadataChannel{1};
 end
     
 function scores = applyDNN(images, net, nstage)
@@ -128,4 +130,13 @@ function label = produceCenterLabelMap(im_size, x, y, sigma)
     D2 = X.^2 + Y.^2;
     Exponent = D2 ./ 2.0 ./ sigma ./ sigma;
     label{1} = exp(-Exponent);
+end
+
+function channel = generateMetadataChannel(im_size, masks)
+    % this function generates a metadata channel
+    channel = zeros(im_size);
+    channel(1,1) = masks.annolist_index;
+    channel(1,2) = masks.camera;
+    channel(1,3) = masks.action;
+    channel(1,4) = masks.person;
 end

@@ -3,7 +3,7 @@ function param = configFromExternal()
 
 % CPU mode (0) or GPU mode (1)
 % friendly warning: CPU mode may take a while
-param.use_gpu = 1;
+param.use_gpu = 0;
 
 % GPU device number (doesn't matter for CPU mode)
 GPUdeviceNumber = 0;
